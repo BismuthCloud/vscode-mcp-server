@@ -1,0 +1,219 @@
+import WebSocket from "ws";
+import { logger } from "./utils/logger";
+
+interface JSONRPCMessage {
+  jsonrpc: "2.0";
+  id?: string | number | null;
+  method?: string;
+  params?: any;
+  result?: any;
+  error?: {
+    code: number;
+    message: string;
+    data?: any;
+  };
+}
+
+interface Transport {
+  start(): Promise<void>;
+  send(message: JSONRPCMessage): Promise<void>;
+  close(): Promise<void>;
+  onclose?: () => void;
+  onerror?: (error: Error) => void;
+  onmessage?: (message: JSONRPCMessage) => void;
+}
+
+export class WebSocketTransport implements Transport {
+  private ws: WebSocket | null = null;
+  private connected: boolean = false;
+  private messageQueue: JSONRPCMessage[] = [];
+
+  // Callbacks set by MCP server
+  onclose?: () => void;
+  onerror?: (error: Error) => void;
+  onmessage?: (message: JSONRPCMessage) => void;
+
+  constructor(private url: string) {
+    // Log URL with token masked
+    const maskedUrl = this.url.replace(/token=[^&]+/, "token=***");
+    logger.info(`[WebSocketTransport] Created with URL: ${maskedUrl}`);
+  }
+
+  async start(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      try {
+        const maskedUrl = this.url.replace(/token=[^&]+/, "token=***");
+        logger.info(
+          `[WebSocketTransport] Starting connection to: ${maskedUrl}`
+        );
+
+        this.ws = new WebSocket(this.url);
+        logger.info(`[WebSocketTransport] WebSocket instance created`);
+
+        this.ws.on("open", () => {
+          logger.info(`[WebSocketTransport] WebSocket connection opened`);
+          this.connected = true;
+
+          // Send any queued messages
+          if (this.messageQueue.length > 0) {
+            logger.info(
+              `[WebSocketTransport] Sending ${this.messageQueue.length} queued messages`
+            );
+          }
+          while (this.messageQueue.length > 0) {
+            const message = this.messageQueue.shift()!;
+            const messageStr = JSON.stringify(message);
+            logger.info(
+              `[WebSocketTransport] Sending queued message: ${messageStr.substring(
+                0,
+                200
+              )}...`
+            );
+            this.ws?.send(messageStr);
+          }
+
+          resolve();
+        });
+
+        this.ws.on("message", (data: WebSocket.Data) => {
+          try {
+            const dataStr = data.toString();
+            logger.info(
+              `[WebSocketTransport] Received message: ${dataStr.substring(
+                0,
+                200
+              )}${dataStr.length > 200 ? "..." : ""}`
+            );
+
+            const message = JSON.parse(dataStr) as JSONRPCMessage;
+
+            // Skip non-MCP messages (like connection confirmations)
+            if (message.jsonrpc === "2.0") {
+              if (this.onmessage) {
+                logger.info(
+                  `[WebSocketTransport] Processing JSONRPC 2.0 message with method: ${
+                    message.method || "response"
+                  }`
+                );
+                this.onmessage(message);
+              } else {
+                logger.warn(
+                  `[WebSocketTransport] Received JSONRPC message but no handler set`
+                );
+              }
+            } else {
+              logger.info(
+                `[WebSocketTransport] Skipping non-JSONRPC 2.0 message`
+              );
+            }
+          } catch (error) {
+            logger.error(
+              `[WebSocketTransport] Failed to parse message: ${error}`
+            );
+            this.onerror?.(new Error(`Failed to parse message: ${error}`));
+          }
+        });
+
+        this.ws.on("close", (code: number, reason: string) => {
+          logger.info(
+            `[WebSocketTransport] WebSocket closed with code: ${code}, reason: ${reason}`
+          );
+          this.connected = false;
+          this.ws = null;
+          this.onclose?.();
+        });
+
+        this.ws.on("error", (error: Error) => {
+          logger.error(
+            `[WebSocketTransport] WebSocket error: ${error.message}`
+          );
+          logger.error(`[WebSocketTransport] Error stack: ${error.stack}`);
+          this.connected = false;
+          this.onerror?.(error);
+          reject(error);
+        });
+
+        // Add additional event handlers for debugging
+        this.ws.on("upgrade", (response) => {
+          logger.info(
+            `[WebSocketTransport] WebSocket upgrade response status: ${response.statusCode}`
+          );
+        });
+
+        this.ws.on("unexpected-response", (request, response) => {
+          logger.error(
+            `[WebSocketTransport] Unexpected response status: ${response.statusCode}`
+          );
+          let body = "";
+          response.on("data", (chunk) => (body += chunk));
+          response.on("end", () => {
+            logger.error(`[WebSocketTransport] Response body: ${body}`);
+          });
+        });
+      } catch (error) {
+        logger.error(
+          `[WebSocketTransport] Failed to create WebSocket: ${error}`
+        );
+        reject(error);
+      }
+    });
+  }
+
+  async send(message: JSONRPCMessage): Promise<void> {
+    const messageStr = JSON.stringify(message);
+
+    if (!this.connected || !this.ws) {
+      logger.info(
+        `[WebSocketTransport] Not connected, queueing message: ${messageStr.substring(
+          0,
+          200
+        )}...`
+      );
+      this.messageQueue.push(message);
+      return;
+    }
+
+    try {
+      logger.info(
+        `[WebSocketTransport] Sending message: ${messageStr.substring(
+          0,
+          200
+        )}...`
+      );
+      this.ws.send(messageStr);
+    } catch (error) {
+      logger.error(`[WebSocketTransport] Failed to send message: ${error}`);
+      throw new Error(`Failed to send message: ${error}`);
+    }
+  }
+
+  async close(): Promise<void> {
+    if (this.ws) {
+      logger.info(`[WebSocketTransport] Closing WebSocket connection`);
+      this.connected = false;
+      this.ws.close();
+      this.ws = null;
+    } else {
+      logger.info(
+        `[WebSocketTransport] Close called but WebSocket already null`
+      );
+    }
+  }
+
+  // Helper method to check connection status
+  isConnected(): boolean {
+    const isConnected =
+      this.connected && this.ws?.readyState === WebSocket.OPEN;
+    logger.info(
+      `[WebSocketTransport] Connection status check: ${isConnected} (connected: ${this.connected}, readyState: ${this.ws?.readyState})`
+    );
+    return isConnected;
+  }
+
+  // Helper method to reconnect
+  async reconnect(): Promise<void> {
+    logger.info(`[WebSocketTransport] Reconnecting...`);
+    await this.close();
+    await this.start();
+  }
+}
