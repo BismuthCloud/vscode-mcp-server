@@ -345,6 +345,141 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     );
 
+    const openWebAppCommand = vscode.commands.registerCommand(
+      "vscode-mcp-server.openWebApp",
+      async () => {
+        // Get the API key from configuration
+        const config = vscode.workspace.getConfiguration("vscode-mcp-server");
+        const apiKey = config.get<string>("apiKey") || "";
+
+        if (!apiKey) {
+          vscode.window.showErrorMessage(
+            "Please configure your authentication token first. Use the command palette: 'BismuthVS: Configure API Key'"
+          );
+          return;
+        }
+
+        // If the server is not enabled, enable it first
+        if (!serverEnabled) {
+          vscode.window.showInformationMessage(
+            "Enabling BismuthVS before opening web app..."
+          );
+          await toggleServerState(context);
+
+          // Wait a moment for the server to start
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+
+        // Create a webview panel
+        const panel = vscode.window.createWebviewPanel(
+          "bismuthWebApp",
+          "Bismuth",
+          vscode.ViewColumn.One,
+          {
+            enableScripts: true,
+            retainContextWhenHidden: true,
+          }
+        );
+
+        // Set the webview's HTML content to load the localhost URL in an iframe
+        const webAppUrl = `http://localhost:3000?codeEditorAPIKey=${encodeURIComponent(
+          apiKey
+        )}`;
+
+        // Function to get the HTML content
+        const getWebviewContent = () => `
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <title>Bismuth</title>
+            <style>
+              body, html {
+                margin: 0;
+                padding: 0;
+                height: 100vh;
+                overflow: hidden;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              }
+              .toolbar {
+                height: 35px;
+                background: var(--vscode-editor-background);
+                border-bottom: 1px solid var(--vscode-panel-border);
+                display: flex;
+                align-items: center;
+                padding: 0 10px;
+                gap: 10px;
+              }
+              .toolbar button {
+                background: var(--vscode-button-background);
+                color: var(--vscode-button-foreground);
+                border: none;
+                padding: 4px 12px;
+                cursor: pointer;
+                border-radius: 2px;
+                font-size: 13px;
+              }
+              .toolbar button:hover {
+                background: var(--vscode-button-hoverBackground);
+              }
+              .toolbar .info {
+                color: var(--vscode-foreground);
+                font-size: 12px;
+                opacity: 0.8;
+                margin-left: auto;
+              }
+              iframe {
+                width: 100%;
+                height: calc(100vh - 35px);
+                border: none;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="toolbar">
+              <button onclick="refreshPage()">↻ Refresh</button>
+              <span class="info">Press Cmd/Ctrl+R to refresh</span>
+            </div>
+            <iframe 
+              id="bismuthFrame" 
+              src="${webAppUrl}" 
+              title="Bismuth Web App"
+              allow="clipboard-read; clipboard-write; *"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-clipboard-read allow-clipboard-write"
+            ></iframe>
+            <script>
+              function refreshPage() {
+                const iframe = document.getElementById('bismuthFrame');
+                iframe.src = iframe.src;
+              }
+              
+              // Listen for keyboard shortcuts
+              document.addEventListener('keydown', (e) => {
+                // Cmd+R or Ctrl+R
+                if ((e.metaKey || e.ctrlKey) && e.key === 'r') {
+                  e.preventDefault();
+                  refreshPage();
+                }
+                // F5
+                if (e.key === 'F5') {
+                  e.preventDefault();
+                  refreshPage();
+                }
+              });
+            </script>
+          </body>
+          </html>
+        `;
+
+        panel.webview.html = getWebviewContent();
+
+        vscode.window.showInformationMessage(
+          "Bismuth web app opened in VS Code. Use Cmd/Ctrl+R to refresh."
+        );
+      }
+    );
+
     // Listen for configuration changes to restart server if needed
     const configChangeListener = vscode.workspace.onDidChangeConfiguration(
       async (event) => {
@@ -407,6 +542,7 @@ export async function activate(context: vscode.ExtensionContext) {
       toggleServerCommand,
       showServerInfoCommand,
       configureApiKeyCommand,
+      openWebAppCommand,
       configChangeListener,
       { dispose: async () => mcpServer && (await mcpServer.stop()) }
     );

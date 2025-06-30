@@ -39,12 +39,19 @@ The BismuthVS extension provides Bismuth with the ability to:
 
 ### Starting the Server
 
-1. Set your API key in VS Code settings
+1. Set your API key in VS Code settings (or use Command Palette: "BismuthVS: Configure API Key")
 2. Click the status bar item (bottom right) to toggle the server on/off
 3. The status bar will show:
-   - "MCP Server: Off" - Server is disabled
-   - "MCP Server: Connecting..." - Server is starting
-   - "MCP Server: Connected" - Server is active and connected to Bismuth
+   - "BismuthVS: Off" - Server is disabled
+   - "BismuthVS: Connecting..." - Server is starting
+   - "BismuthVS: Connected" - Server is active and connected to Bismuth
+
+### Command Palette Actions
+
+- **BismuthVS: Configure API Key** - Set or update your authentication token
+- **BismuthVS: Toggle** - Enable/disable the BismuthVS server
+- **BismuthVS: Show Status** - Display the current connection status
+- **BismuthVS: Open Web App** - Open the Bismuth web app inside VS Code (automatically enables the server if needed)
 
 ## Supported Tools
 

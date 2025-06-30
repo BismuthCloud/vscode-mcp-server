@@ -83,6 +83,10 @@
       {
         "command": "vscode-mcp-server.configureApiKey",
         "title": "BismuthVS: Configure API Key"
+      },
+      {
+        "command": "vscode-mcp-server.openWebApp",
+        "title": "BismuthVS: Open Web App"
       }
     ]
   },

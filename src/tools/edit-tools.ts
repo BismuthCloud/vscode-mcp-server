@@ -3,6 +3,89 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { searchReplaceInFile } from "./search-replace";
+import * as path from "path";
+
+/**
+ * Get all workspace diagnostics (Problems tab) after a short delay to allow LSP to update
+ * @returns Formatted diagnostics string
+ */
+async function getAllDiagnosticsAfterDelay(): Promise<string> {
+  // Wait a bit for LSP to update diagnostics
+  await new Promise((resolve) => setTimeout(resolve, 500));
+
+  // Get all diagnostics from the workspace (what's shown in Problems tab)
+  const allDiagnostics = vscode.languages.getDiagnostics();
+
+  if (allDiagnostics.length === 0) {
+    return "No problems found in workspace.";
+  }
+
+  // Count total issues
+  let totalErrors = 0;
+  let totalWarnings = 0;
+  let totalOther = 0;
+
+  for (const [uri, diagnostics] of allDiagnostics) {
+    for (const diagnostic of diagnostics) {
+      if (diagnostic.severity === vscode.DiagnosticSeverity.Error) {
+        totalErrors++;
+      } else if (diagnostic.severity === vscode.DiagnosticSeverity.Warning) {
+        totalWarnings++;
+      } else {
+        totalOther++;
+      }
+    }
+  }
+
+  // Format diagnostics
+  let output = `Problems tab summary: ${totalErrors} error(s), ${totalWarnings} warning(s)`;
+  if (totalOther > 0) {
+    output += `, ${totalOther} other(s)`;
+  }
+  output += "\n\n";
+
+  // Show first few problems for context
+  let problemCount = 0;
+  const maxProblemsToShow = 10;
+
+  for (const [uri, diagnostics] of allDiagnostics) {
+    if (problemCount >= maxProblemsToShow) {
+      output += `\n... and ${
+        totalErrors + totalWarnings + totalOther - problemCount
+      } more problem(s)`;
+      break;
+    }
+
+    const relativePath = vscode.workspace.asRelativePath(uri);
+
+    for (const diagnostic of diagnostics) {
+      if (problemCount >= maxProblemsToShow) break;
+
+      const severity =
+        diagnostic.severity === vscode.DiagnosticSeverity.Error
+          ? "Error"
+          : diagnostic.severity === vscode.DiagnosticSeverity.Warning
+          ? "Warning"
+          : diagnostic.severity === vscode.DiagnosticSeverity.Information
+          ? "Info"
+          : "Hint";
+
+      output += `${severity}: ${relativePath}:${
+        diagnostic.range.start.line + 1
+      }:${diagnostic.range.start.character + 1}\n`;
+      output += `  ${diagnostic.message}`;
+
+      if (diagnostic.source) {
+        output += ` [${diagnostic.source}]`;
+      }
+
+      output += "\n\n";
+      problemCount++;
+    }
+  }
+
+  return output.trim();
+}
 
 /**
  * Writes content to a file in the VS Code workspace using WorkspaceEdit
@@ -179,7 +262,12 @@ export function registerEditTools(server: McpServer): void {
         ALWAYS TRY search_replace FIRST for: ANY edits to existing files, even large changes.
 
         File handling: Use overwrite=true to replace existing files, ignoreIfExists=true to skip if file exists.
-        Always check with list_files_code first unless you specifically want to overwrite.`,
+        Always check with list_files_code first unless you specifically want to overwrite.
+        
+        DIAGNOSTICS: This tool returns workspace diagnostics after writing. Pay attention to:
+        - ERRORS: Must be fixed if they prevent the app from functioning
+        - WARNINGS: Should be addressed if they impact the user's task
+        - Review the diagnostics and fix critical issues before proceeding`,
     {
       path: z.string().describe("The path to the file to write"),
       content: z.string().describe("The content to write to the file"),
@@ -208,11 +296,14 @@ export function registerEditTools(server: McpServer): void {
         console.log("[write_to_file] Writing file");
         await writeToWorkspaceFile(path, content, overwrite, ignoreIfExists);
 
+        // Get all workspace diagnostics (Problems tab)
+        const diagnostics = await getAllDiagnosticsAfterDelay();
+
         const result: CallToolResult = {
           content: [
             {
               type: "text",
-              text: `File ${path} written successfully`,
+              text: `File ${path} written successfully\n\n===== WORKSPACE DIAGNOSTICS (Problems Tab) =====\n${diagnostics}`,
             },
           ],
         };
@@ -240,6 +331,12 @@ export function registerEditTools(server: McpServer): void {
         - Shows diff view for visual feedback (changes applied automatically)
         - Empty search replaces entire file content
 
+        DIAGNOSTICS: This tool returns workspace diagnostics after editing. IMPORTANT:
+        - Review ALL errors and warnings in the diagnostics output
+        - Fix ERRORS that prevent functionality (syntax errors, type errors, etc.)
+        - Address WARNINGS that impact the user's task or code quality
+        - The diagnostics show ALL workspace issues, not just the edited file
+
         Only use write_to_file if this tool fails or for creating new files.`,
     {
       path: z.string().describe("The path to the file to modify"),
@@ -255,11 +352,14 @@ export function registerEditTools(server: McpServer): void {
         console.log("[search_replace] Performing search and replace");
         await searchReplaceInFile(path, search, replace, true);
 
+        // Get all workspace diagnostics (Problems tab)
+        const diagnostics = await getAllDiagnosticsAfterDelay();
+
         const result: CallToolResult = {
           content: [
             {
               type: "text",
-              text: `Search and replace completed successfully in ${path}`,
+              text: `Search and replace completed successfully in ${path}\n\n===== WORKSPACE DIAGNOSTICS (Problems Tab) =====\n${diagnostics}`,
             },
           ],
         };
