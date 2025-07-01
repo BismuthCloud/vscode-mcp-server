@@ -6,6 +6,7 @@ import { registerEditTools } from "./tools/edit-tools";
 import { registerShellTools } from "./tools/shell-tools";
 import { registerDiagnosticsTools } from "./tools/diagnostics-tools";
 import { registerSymbolTools } from "./tools/symbol-tools";
+import { registerSearchTools } from "./tools/search-tools";
 import { logger } from "./utils/logger";
 
 // Base WebSocket URL - token will be appended as query parameter
@@ -18,6 +19,7 @@ export interface ToolConfiguration {
   shell: boolean;
   diagnostics: boolean;
   symbol: boolean;
+  search: boolean;
 }
 
 export class MCPServer {
@@ -46,6 +48,7 @@ export class MCPServer {
       shell: true,
       diagnostics: true,
       symbol: true,
+      search: true,
     };
 
     // Initialize MCP Server
@@ -112,6 +115,14 @@ export class MCPServer {
         logger.info("MCP symbol tools registered successfully");
       } else {
         logger.info("MCP symbol tools disabled by configuration");
+      }
+
+      // Register search tools if enabled
+      if (this.toolConfig.search) {
+        registerSearchTools(this.server);
+        logger.info("MCP search tools registered successfully");
+      } else {
+        logger.info("MCP search tools disabled by configuration");
       }
     } else {
       logger.warn("File listing callback not set during tools setup");

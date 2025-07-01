@@ -5,104 +5,114 @@ import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { searchReplaceInFile } from "./search-replace";
 import * as path from "path";
 
+interface DiagnosticInfo {
+  severity: string;
+  path: string;
+  line: number;
+  column: number;
+  message: string;
+  source?: string;
+}
+
+interface DiagnosticsResult {
+  summary: {
+    errors: number;
+    warnings: number;
+    other: number;
+  };
+  problems: DiagnosticInfo[];
+  totalProblems: number;
+}
+
 /**
  * Get all workspace diagnostics (Problems tab) after a short delay to allow LSP to update
- * @returns Formatted diagnostics string
+ * @returns Structured diagnostics data
  */
-async function getAllDiagnosticsAfterDelay(): Promise<string> {
+async function getAllDiagnosticsAfterDelay(): Promise<DiagnosticsResult> {
   // Wait a bit for LSP to update diagnostics
   await new Promise((resolve) => setTimeout(resolve, 500));
 
   // Get all diagnostics from the workspace (what's shown in Problems tab)
   const allDiagnostics = vscode.languages.getDiagnostics();
 
+  const result: DiagnosticsResult = {
+    summary: {
+      errors: 0,
+      warnings: 0,
+      other: 0,
+    },
+    problems: [],
+    totalProblems: 0,
+  };
+
   if (allDiagnostics.length === 0) {
-    return "No problems found in workspace.";
+    return result;
   }
 
-  // Count total issues
-  let totalErrors = 0;
-  let totalWarnings = 0;
-  let totalOther = 0;
-
-  for (const [uri, diagnostics] of allDiagnostics) {
-    for (const diagnostic of diagnostics) {
-      if (diagnostic.severity === vscode.DiagnosticSeverity.Error) {
-        totalErrors++;
-      } else if (diagnostic.severity === vscode.DiagnosticSeverity.Warning) {
-        totalWarnings++;
-      } else {
-        totalOther++;
-      }
-    }
-  }
-
-  // Format diagnostics
-  let output = `Problems tab summary: ${totalErrors} error(s), ${totalWarnings} warning(s)`;
-  if (totalOther > 0) {
-    output += `, ${totalOther} other(s)`;
-  }
-  output += "\n\n";
-
-  // Show first few problems for context
-  let problemCount = 0;
+  // Count total issues and collect problems
   const maxProblemsToShow = 10;
 
   for (const [uri, diagnostics] of allDiagnostics) {
-    if (problemCount >= maxProblemsToShow) {
-      output += `\n... and ${
-        totalErrors + totalWarnings + totalOther - problemCount
-      } more problem(s)`;
-      break;
-    }
-
     const relativePath = vscode.workspace.asRelativePath(uri);
 
     for (const diagnostic of diagnostics) {
-      if (problemCount >= maxProblemsToShow) break;
-
-      const severity =
-        diagnostic.severity === vscode.DiagnosticSeverity.Error
-          ? "Error"
-          : diagnostic.severity === vscode.DiagnosticSeverity.Warning
-          ? "Warning"
-          : diagnostic.severity === vscode.DiagnosticSeverity.Information
-          ? "Info"
-          : "Hint";
-
-      output += `${severity}: ${relativePath}:${
-        diagnostic.range.start.line + 1
-      }:${diagnostic.range.start.character + 1}\n`;
-      output += `  ${diagnostic.message}`;
-
-      if (diagnostic.source) {
-        output += ` [${diagnostic.source}]`;
+      // Update counts
+      if (diagnostic.severity === vscode.DiagnosticSeverity.Error) {
+        result.summary.errors++;
+      } else if (diagnostic.severity === vscode.DiagnosticSeverity.Warning) {
+        result.summary.warnings++;
+      } else {
+        result.summary.other++;
       }
 
-      output += "\n\n";
-      problemCount++;
+      // Add to problems list if under limit
+      if (result.problems.length < maxProblemsToShow) {
+        const severity =
+          diagnostic.severity === vscode.DiagnosticSeverity.Error
+            ? "Error"
+            : diagnostic.severity === vscode.DiagnosticSeverity.Warning
+            ? "Warning"
+            : diagnostic.severity === vscode.DiagnosticSeverity.Information
+            ? "Info"
+            : "Hint";
+
+        const problem: DiagnosticInfo = {
+          severity,
+          path: relativePath,
+          line: diagnostic.range.start.line + 1,
+          column: diagnostic.range.start.character + 1,
+          message: diagnostic.message,
+        };
+
+        if (diagnostic.source) {
+          problem.source = diagnostic.source;
+        }
+
+        result.problems.push(problem);
+      }
     }
   }
 
-  return output.trim();
+  result.totalProblems =
+    result.summary.errors + result.summary.warnings + result.summary.other;
+
+  return result;
 }
 
 /**
  * Writes content to a file in the VS Code workspace using WorkspaceEdit
  * @param workspacePath The path within the workspace to the file
  * @param content The content to write to the file
- * @param overwrite Whether to overwrite if the file exists
  * @param ignoreIfExists Whether to ignore if the file exists
  * @returns Promise that resolves when the edit operation completes
  */
 export async function writeToWorkspaceFile(
   workspacePath: string,
   content: string,
-  overwrite: boolean = false,
   ignoreIfExists: boolean = false
 ): Promise<void> {
   console.log(
-    `[writeToWorkspaceFile] Starting with path: ${workspacePath}, overwrite: ${overwrite}, ignoreIfExists: ${ignoreIfExists}`
+    `[writeToWorkspaceFile] Starting with path: ${workspacePath}, ignoreIfExists: ${ignoreIfExists}`
   );
 
   if (!vscode.workspace.workspaceFolders) {
@@ -123,10 +133,10 @@ export async function writeToWorkspaceFile(
     // Convert content to Uint8Array
     const contentBuffer = new TextEncoder().encode(content);
 
-    // Add createFile operation to the edit
+    // Add createFile operation to the edit - always overwrite
     workspaceEdit.createFile(fileUri, {
       contents: contentBuffer,
-      overwrite: overwrite,
+      overwrite: true,
       ignoreIfExists: ignoreIfExists,
     });
 
@@ -261,8 +271,14 @@ export function registerEditTools(server: McpServer): void {
         WHEN TO USE: ONLY for creating new files or when search_replace has failed.
         ALWAYS TRY search_replace FIRST for: ANY edits to existing files, even large changes.
 
-        File handling: Use overwrite=true to replace existing files, ignoreIfExists=true to skip if file exists.
-        Always check with list_files_code first unless you specifically want to overwrite.
+        File handling: This tool ALWAYS overwrites existing files. Use ignoreIfExists=true to skip if file exists.
+        
+        AUTO-FORMATTING: After writing, VS Code may automatically format the file based on:
+        - Editor settings (formatOnSave, formatOnPaste)
+        - Language-specific formatters (Prettier, ESLint, etc.)
+        - Workspace/project formatting rules
+        
+        FINAL CONTENTS: The tool returns the FINAL content after any auto-formatting has been applied.
         
         DIAGNOSTICS: This tool returns workspace diagnostics after writing. Pay attention to:
         - ERRORS: Must be fixed if they prevent the app from functioning
@@ -271,11 +287,6 @@ export function registerEditTools(server: McpServer): void {
     {
       path: z.string().describe("The path to the file to write"),
       content: z.string().describe("The content to write to the file"),
-      overwrite: z
-        .boolean()
-        .optional()
-        .default(false)
-        .describe("Whether to overwrite if the file exists"),
       ignoreIfExists: z
         .boolean()
         .optional()
@@ -285,16 +296,21 @@ export function registerEditTools(server: McpServer): void {
     async ({
       path,
       content,
-      overwrite = false,
       ignoreIfExists = false,
     }): Promise<CallToolResult> => {
       console.log(
-        `[write_to_file] Tool called with path=${path}, overwrite=${overwrite}, ignoreIfExists=${ignoreIfExists}`
+        `[write_to_file] Tool called with path=${path}, ignoreIfExists=${ignoreIfExists}`
       );
 
       try {
         console.log("[write_to_file] Writing file");
-        await writeToWorkspaceFile(path, content, overwrite, ignoreIfExists);
+        await writeToWorkspaceFile(path, content, ignoreIfExists);
+
+        // Get the final contents after any auto-formatting
+        const workspaceFolder = vscode.workspace.workspaceFolders![0];
+        const fileUri = vscode.Uri.joinPath(workspaceFolder.uri, path);
+        const document = await vscode.workspace.openTextDocument(fileUri);
+        const finalContents = document.getText();
 
         // Get all workspace diagnostics (Problems tab)
         const diagnostics = await getAllDiagnosticsAfterDelay();
@@ -303,7 +319,16 @@ export function registerEditTools(server: McpServer): void {
           content: [
             {
               type: "text",
-              text: `File ${path} written successfully\n\n===== WORKSPACE DIAGNOSTICS (Problems Tab) =====\n${diagnostics}`,
+              text: JSON.stringify(
+                {
+                  success: true,
+                  path: path,
+                  final_contents: finalContents,
+                  diagnostics: diagnostics,
+                },
+                null,
+                2
+              ),
             },
           ],
         };
@@ -331,6 +356,13 @@ export function registerEditTools(server: McpServer): void {
         - Shows diff view for visual feedback (changes applied automatically)
         - Empty search replaces entire file content
 
+        AUTO-FORMATTING: After editing, VS Code may automatically format the file based on:
+        - Editor settings (formatOnSave, formatOnPaste)
+        - Language-specific formatters (Prettier, ESLint, etc.)
+        - Workspace/project formatting rules
+        
+        FINAL CONTENTS: The tool returns the FINAL content after any auto-formatting has been applied.
+
         DIAGNOSTICS: This tool returns workspace diagnostics after editing. IMPORTANT:
         - Review ALL errors and warnings in the diagnostics output
         - Fix ERRORS that prevent functionality (syntax errors, type errors, etc.)
@@ -352,6 +384,12 @@ export function registerEditTools(server: McpServer): void {
         console.log("[search_replace] Performing search and replace");
         await searchReplaceInFile(path, search, replace, true);
 
+        // Get the final contents after any auto-formatting
+        const workspaceFolder = vscode.workspace.workspaceFolders![0];
+        const fileUri = vscode.Uri.joinPath(workspaceFolder.uri, path);
+        const document = await vscode.workspace.openTextDocument(fileUri);
+        const finalContents = document.getText();
+
         // Get all workspace diagnostics (Problems tab)
         const diagnostics = await getAllDiagnosticsAfterDelay();
 
@@ -359,7 +397,16 @@ export function registerEditTools(server: McpServer): void {
           content: [
             {
               type: "text",
-              text: `Search and replace completed successfully in ${path}\n\n===== WORKSPACE DIAGNOSTICS (Problems Tab) =====\n${diagnostics}`,
+              text: JSON.stringify(
+                {
+                  success: true,
+                  path: path,
+                  final_contents: finalContents,
+                  diagnostics: diagnostics,
+                },
+                null,
+                2
+              ),
             },
           ],
         };

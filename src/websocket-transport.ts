@@ -93,9 +93,21 @@ export class WebSocketTransport implements Transport {
                 logger.info(
                   `[WebSocketTransport] Processing JSONRPC 2.0 message with method: ${
                     message.method || "response"
+                  }, id: ${message.id || "none"}, error: ${
+                    message.error ? JSON.stringify(message.error) : "none"
                   }`
                 );
-                this.onmessage(message);
+
+                try {
+                  this.onmessage(message);
+                } catch (handlerError) {
+                  // Catch any errors from the message handler to prevent connection death
+                  logger.error(
+                    `[WebSocketTransport] Error in message handler: ${handlerError}`
+                  );
+                  // Don't propagate the error - just log it
+                  // The connection should remain open
+                }
               } else {
                 logger.warn(
                   `[WebSocketTransport] Received JSONRPC message but no handler set`
@@ -110,7 +122,8 @@ export class WebSocketTransport implements Transport {
             logger.error(
               `[WebSocketTransport] Failed to parse message: ${error}`
             );
-            this.onerror?.(new Error(`Failed to parse message: ${error}`));
+            // Don't call onerror for parse errors - just log them
+            // This prevents the connection from being terminated
           }
         });
 
@@ -128,9 +141,21 @@ export class WebSocketTransport implements Transport {
             `[WebSocketTransport] WebSocket error: ${error.message}`
           );
           logger.error(`[WebSocketTransport] Error stack: ${error.stack}`);
-          this.connected = false;
-          this.onerror?.(error);
-          reject(error);
+
+          // Only reject during initial connection
+          // After connection is established, just log errors
+          if (!this.connected) {
+            this.connected = false;
+            this.onerror?.(error);
+            reject(error);
+          } else {
+            // Connection already established - don't kill it
+            logger.error(
+              `[WebSocketTransport] Error occurred on established connection - keeping connection alive`
+            );
+            // Still notify about the error but don't close the connection
+            this.onerror?.(error);
+          }
         });
 
         // Add additional event handlers for debugging
@@ -183,6 +208,17 @@ export class WebSocketTransport implements Transport {
       this.ws.send(messageStr);
     } catch (error) {
       logger.error(`[WebSocketTransport] Failed to send message: ${error}`);
+
+      // Check if this is an error response - those should not kill the connection
+      if (message.error) {
+        logger.info(
+          `[WebSocketTransport] Failed to send error response, but keeping connection alive`
+        );
+        // Don't throw for error responses - just log and continue
+        return;
+      }
+
+      // For other send failures, still throw but with more context
       throw new Error(`Failed to send message: ${error}`);
     }
   }

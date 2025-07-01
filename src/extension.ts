@@ -29,6 +29,7 @@ function getToolConfiguration(): ToolConfiguration {
     shell: enabledTools.shell ?? true,
     diagnostics: enabledTools.diagnostics ?? true,
     symbol: enabledTools.symbol ?? true,
+    search: enabledTools.search ?? true,
   };
 }
 

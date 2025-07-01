@@ -186,23 +186,30 @@ export async function showDiff(
   modifiedContent: string,
   title: string
 ): Promise<void> {
-  // Create a temporary file for the modified content
+  // Create temporary files for both original and modified content
   const tempDir = os.tmpdir();
-  const tempFileName = `vscode-mcp-${Date.now()}-${path.basename(
-    originalUri.fsPath
-  )}`;
-  const tempFilePath = path.join(tempDir, tempFileName);
+  const baseName = path.basename(originalUri.fsPath);
+  const timestamp = Date.now();
+
+  const originalTempFileName = `vscode-mcp-original-${timestamp}-${baseName}`;
+  const modifiedTempFileName = `vscode-mcp-modified-${timestamp}-${baseName}`;
+
+  const originalTempPath = path.join(tempDir, originalTempFileName);
+  const modifiedTempPath = path.join(tempDir, modifiedTempFileName);
 
   try {
-    // Write modified content to temp file
-    await fs.writeFile(tempFilePath, modifiedContent, "utf8");
-    const tempUri = vscode.Uri.file(tempFilePath);
+    // Write both contents to temp files
+    await fs.writeFile(originalTempPath, originalContent, "utf8");
+    await fs.writeFile(modifiedTempPath, modifiedContent, "utf8");
 
-    // Open diff editor for visual feedback
+    const originalTempUri = vscode.Uri.file(originalTempPath);
+    const modifiedTempUri = vscode.Uri.file(modifiedTempPath);
+
+    // Open diff editor showing original vs modified
     await vscode.commands.executeCommand(
       "vscode.diff",
-      originalUri,
-      tempUri,
+      originalTempUri,
+      modifiedTempUri,
       title,
       {
         preview: true,
@@ -210,18 +217,20 @@ export async function showDiff(
       }
     );
 
-    // Clean up temp file after a short delay to allow diff view to load
+    // Clean up temp files after a delay to allow diff view to load
     setTimeout(async () => {
       try {
-        await fs.unlink(tempFilePath);
+        await fs.unlink(originalTempPath);
+        await fs.unlink(modifiedTempPath);
       } catch (e) {
         // Ignore cleanup errors
       }
-    }, 1000);
+    }, 5000); // Increased delay to give more time for viewing
   } catch (error) {
     // Clean up on error
     try {
-      await fs.unlink(tempFilePath);
+      await fs.unlink(originalTempPath);
+      await fs.unlink(modifiedTempPath);
     } catch (e) {
       // Ignore cleanup errors
     }

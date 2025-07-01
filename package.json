@@ -4,7 +4,7 @@
   "displayName": "BismuthVS",
   "description": "BismuthVS - Enables Bismuth to drive VSCode (based on vscode-mcp-server)",
   "version": "0.2.0",
-  "repository": "https://github.com/juehang/vscode-mcp-server",
+  "repository": "https://github.com/BismuthCloud/vscode-mcp-server",
   "publisher": "IanButler",
   "license": "MIT",
   "engines": {
@@ -39,7 +39,8 @@
             "edit": true,
             "shell": true,
             "diagnostics": true,
-            "symbol": true
+            "symbol": true,
+            "search": true
           },
           "properties": {
             "file": {
@@ -61,6 +62,10 @@
             "symbol": {
               "type": "boolean",
               "description": "Enable code symbol and structure analysis tools"
+            },
+            "search": {
+              "type": "boolean",
+              "description": "Enable code search tools powered by ripgrep"
             }
           },
           "description": "Configure which MCP tools are enabled"
@@ -118,6 +123,7 @@
   "dependencies": {
     "@modelcontextprotocol/inspector": "github:modelcontextprotocol/inspector",
     "@modelcontextprotocol/sdk": "^1.10.1",
+    "@vscode/ripgrep": "^1.15.9",
     "vscode-mcp-server": ".",
     "ws": "^8.18.0",
     "zod": "^3.22.4"
