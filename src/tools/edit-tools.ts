@@ -6,95 +6,55 @@ import { searchReplaceInFile } from "./search-replace";
 import * as path from "path";
 
 interface DiagnosticInfo {
-  severity: string;
-  path: string;
+  file: string;
   line: number;
   column: number;
+  severity: string;
   message: string;
   source?: string;
 }
 
-interface DiagnosticsResult {
-  summary: {
-    errors: number;
-    warnings: number;
-    other: number;
-  };
-  problems: DiagnosticInfo[];
-  totalProblems: number;
-}
-
 /**
- * Get all workspace diagnostics (Problems tab) after a short delay to allow LSP to update
- * @returns Structured diagnostics data
+ * Get diagnostics for a specific file after a short delay to allow LSP to update
+ * @param fileUri The URI of the file to get diagnostics for
+ * @returns Array of diagnostics for the specific file
  */
-async function getAllDiagnosticsAfterDelay(): Promise<DiagnosticsResult> {
+async function getFileDiagnosticsAfterDelay(
+  fileUri: vscode.Uri
+): Promise<DiagnosticInfo[]> {
   // Wait a bit for LSP to update diagnostics
   await new Promise((resolve) => setTimeout(resolve, 500));
 
-  // Get all diagnostics from the workspace (what's shown in Problems tab)
-  const allDiagnostics = vscode.languages.getDiagnostics();
+  // Get diagnostics for the specific file
+  const diagnostics = vscode.languages.getDiagnostics(fileUri);
+  const relativePath = vscode.workspace.asRelativePath(fileUri);
 
-  const result: DiagnosticsResult = {
-    summary: {
-      errors: 0,
-      warnings: 0,
-      other: 0,
-    },
-    problems: [],
-    totalProblems: 0,
-  };
+  const result: DiagnosticInfo[] = [];
 
-  if (allDiagnostics.length === 0) {
-    return result;
-  }
+  for (const diagnostic of diagnostics) {
+    const severity =
+      diagnostic.severity === vscode.DiagnosticSeverity.Error
+        ? "Error"
+        : diagnostic.severity === vscode.DiagnosticSeverity.Warning
+        ? "Warning"
+        : diagnostic.severity === vscode.DiagnosticSeverity.Information
+        ? "Information"
+        : "Hint";
 
-  // Count total issues and collect problems
-  const maxProblemsToShow = 10;
+    const problem: DiagnosticInfo = {
+      file: relativePath,
+      line: diagnostic.range.start.line + 1,
+      column: diagnostic.range.start.character + 1,
+      severity,
+      message: diagnostic.message,
+    };
 
-  for (const [uri, diagnostics] of allDiagnostics) {
-    const relativePath = vscode.workspace.asRelativePath(uri);
-
-    for (const diagnostic of diagnostics) {
-      // Update counts
-      if (diagnostic.severity === vscode.DiagnosticSeverity.Error) {
-        result.summary.errors++;
-      } else if (diagnostic.severity === vscode.DiagnosticSeverity.Warning) {
-        result.summary.warnings++;
-      } else {
-        result.summary.other++;
-      }
-
-      // Add to problems list if under limit
-      if (result.problems.length < maxProblemsToShow) {
-        const severity =
-          diagnostic.severity === vscode.DiagnosticSeverity.Error
-            ? "Error"
-            : diagnostic.severity === vscode.DiagnosticSeverity.Warning
-            ? "Warning"
-            : diagnostic.severity === vscode.DiagnosticSeverity.Information
-            ? "Info"
-            : "Hint";
-
-        const problem: DiagnosticInfo = {
-          severity,
-          path: relativePath,
-          line: diagnostic.range.start.line + 1,
-          column: diagnostic.range.start.character + 1,
-          message: diagnostic.message,
-        };
-
-        if (diagnostic.source) {
-          problem.source = diagnostic.source;
-        }
-
-        result.problems.push(problem);
-      }
+    if (diagnostic.source) {
+      problem.source = diagnostic.source;
     }
-  }
 
-  result.totalProblems =
-    result.summary.errors + result.summary.warnings + result.summary.other;
+    result.push(problem);
+  }
 
   return result;
 }
@@ -280,10 +240,10 @@ export function registerEditTools(server: McpServer): void {
         
         FINAL CONTENTS: The tool returns the FINAL content after any auto-formatting has been applied.
         
-        DIAGNOSTICS: This tool returns workspace diagnostics after writing. Pay attention to:
+        DIAGNOSTICS: This tool returns diagnostics for the edited file only. Pay attention to:
         - ERRORS: Must be fixed if they prevent the app from functioning
         - WARNINGS: Should be addressed if they impact the user's task
-        - Review the diagnostics and fix critical issues before proceeding`,
+        - Only shows issues for the file that was just written`,
     {
       path: z.string().describe("The path to the file to write"),
       content: z.string().describe("The content to write to the file"),
@@ -312,8 +272,8 @@ export function registerEditTools(server: McpServer): void {
         const document = await vscode.workspace.openTextDocument(fileUri);
         const finalContents = document.getText();
 
-        // Get all workspace diagnostics (Problems tab)
-        const diagnostics = await getAllDiagnosticsAfterDelay();
+        // Get diagnostics for the edited file only
+        const diagnostics = await getFileDiagnosticsAfterDelay(fileUri);
 
         const result: CallToolResult = {
           content: [
@@ -363,11 +323,11 @@ export function registerEditTools(server: McpServer): void {
         
         FINAL CONTENTS: The tool returns the FINAL content after any auto-formatting has been applied.
 
-        DIAGNOSTICS: This tool returns workspace diagnostics after editing. IMPORTANT:
+        DIAGNOSTICS: This tool returns diagnostics for the edited file only. IMPORTANT:
         - Review ALL errors and warnings in the diagnostics output
         - Fix ERRORS that prevent functionality (syntax errors, type errors, etc.)
         - Address WARNINGS that impact the user's task or code quality
-        - The diagnostics show ALL workspace issues, not just the edited file
+        - Only shows issues for the file that was just edited
 
         Only use write_to_file if this tool fails or for creating new files.`,
     {
@@ -390,8 +350,8 @@ export function registerEditTools(server: McpServer): void {
         const document = await vscode.workspace.openTextDocument(fileUri);
         const finalContents = document.getText();
 
-        // Get all workspace diagnostics (Problems tab)
-        const diagnostics = await getAllDiagnosticsAfterDelay();
+        // Get diagnostics for the edited file only
+        const diagnostics = await getFileDiagnosticsAfterDelay(fileUri);
 
         const result: CallToolResult = {
           content: [

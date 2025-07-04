@@ -7,6 +7,7 @@ import { registerShellTools } from "./tools/shell-tools";
 import { registerDiagnosticsTools } from "./tools/diagnostics-tools";
 import { registerSymbolTools } from "./tools/symbol-tools";
 import { registerSearchTools } from "./tools/search-tools";
+import { registerWorkspaceTools } from "./tools/workspace-tools";
 import { logger } from "./utils/logger";
 
 // Base WebSocket URL - token will be appended as query parameter
@@ -124,6 +125,10 @@ export class MCPServer {
       } else {
         logger.info("MCP search tools disabled by configuration");
       }
+
+      // Always register workspace tools (internal tool for programmatic use)
+      registerWorkspaceTools(this.server);
+      logger.info("MCP workspace tools registered successfully");
     } else {
       logger.warn("File listing callback not set during tools setup");
     }
