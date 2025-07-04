@@ -34,6 +34,18 @@ function getToolConfiguration(): ToolConfiguration {
 }
 
 /**
+ * Gets the client websocket base URL from VS Code settings
+ * @returns The client websocket base URL
+ */
+function getClientWebsocketBaseUrl(): string {
+  const config = vscode.workspace.getConfiguration("vscode-mcp-server");
+  return (
+    config.get<string>("clientWebsocketBaseUrl") ||
+    "ws://localhost:8765/superlinear/code-editor-mcp"
+  );
+}
+
+/**
  * Gets or creates the shared terminal for the extension
  * @param context The extension context
  * @returns The shared terminal instance
@@ -55,7 +67,17 @@ export function getExtensionTerminal(
   }
 
   // Create a new terminal if it doesn't exist or if it has exited
-  sharedTerminal = vscode.window.createTerminal(TERMINAL_NAME);
+  sharedTerminal = vscode.window.createTerminal({
+    name: TERMINAL_NAME,
+    iconPath: vscode.Uri.joinPath(
+      context.extensionUri,
+      "resources",
+      "icon.svg"
+    ),
+    env: {
+      PAGER: "cat", // Disable paging to avoid issues with output
+    },
+  });
   logger.info("[getExtensionTerminal] Created new terminal for shell commands");
   context.subscriptions.push(sharedTerminal);
 
@@ -128,7 +150,13 @@ async function toggleServerState(
       logger.info(`[toggleServerState] Creating MCP server instance`);
       const terminal = getExtensionTerminal(context);
       const toolConfig = getToolConfiguration();
-      mcpServer = new MCPServer(apiKey, terminal, toolConfig);
+      const clientWebsocketBaseUrl = getClientWebsocketBaseUrl();
+      mcpServer = new MCPServer(
+        apiKey,
+        clientWebsocketBaseUrl,
+        terminal,
+        toolConfig
+      );
       mcpServer.setFileListingCallback(
         async (path: string, recursive: boolean, options?: any) => {
           try {
@@ -219,6 +247,13 @@ export async function activate(context: vscode.ExtensionContext) {
       );
       serverEnabled = false;
       context.globalState.update("mcpServerEnabled", false);
+
+      setTimeout(() => {
+        // After a short delay, re-enable if configured to do so
+        if (defaultEnabled) {
+          vscode.commands.executeCommand("vscode-mcp-server.toggleServer");
+        }
+      }, 3000);
     }
 
     logger.info(`[activate] API key configured: ${apiKey ? "Yes" : "No"}`);
@@ -243,7 +278,13 @@ export async function activate(context: vscode.ExtensionContext) {
 
         // Initialize MCP server with the API key, terminal, and tool configuration
         const toolConfig = getToolConfiguration();
-        mcpServer = new MCPServer(apiKey, terminal, toolConfig);
+        const clientWebsocketBaseUrl = getClientWebsocketBaseUrl();
+        mcpServer = new MCPServer(
+          apiKey,
+          clientWebsocketBaseUrl,
+          terminal,
+          toolConfig
+        );
 
         // Set up file listing callback
         mcpServer.setFileListingCallback(
@@ -510,8 +551,14 @@ export async function activate(context: vscode.ExtensionContext) {
 
             const terminal = getExtensionTerminal(context);
             const toolConfig = getToolConfiguration();
+            const clientWebsocketBaseUrl = getClientWebsocketBaseUrl();
 
-            mcpServer = new MCPServer(apiKey, terminal, toolConfig);
+            mcpServer = new MCPServer(
+              apiKey,
+              clientWebsocketBaseUrl,
+              terminal,
+              toolConfig
+            );
             mcpServer.setFileListingCallback(
               async (path: string, recursive: boolean, options?: any) => {
                 try {

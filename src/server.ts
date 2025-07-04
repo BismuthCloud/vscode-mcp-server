@@ -10,10 +10,6 @@ import { registerSearchTools } from "./tools/search-tools";
 import { registerWorkspaceTools } from "./tools/workspace-tools";
 import { logger } from "./utils/logger";
 
-// Base WebSocket URL - token will be appended as query parameter
-const CLIENT_WEBSOCKET_BASE_URL =
-  "ws://localhost:8765/superlinear/code-editor-mcp"; // TODO: Replace with actual client URL
-
 export interface ToolConfiguration {
   file: boolean;
   edit: boolean;
@@ -30,6 +26,7 @@ export class MCPServer {
   private terminal?: vscode.Terminal;
   private toolConfig: ToolConfiguration;
   private apiKey: string;
+  private clientWebsocketBaseUrl: string;
   private isConnected: boolean = false;
 
   public setFileListingCallback(callback: FileListingCallback) {
@@ -38,10 +35,12 @@ export class MCPServer {
 
   constructor(
     apiKey: string,
+    clientWebsocketBaseUrl: string,
     terminal?: vscode.Terminal,
     toolConfig?: ToolConfiguration
   ) {
     this.apiKey = apiKey;
+    this.clientWebsocketBaseUrl = clientWebsocketBaseUrl;
     this.terminal = terminal;
     this.toolConfig = toolConfig || {
       file: true,
@@ -140,7 +139,7 @@ export class MCPServer {
       const startTime = Date.now();
 
       // Create WebSocket transport with URL including token as query parameter
-      const wsUrl = `${CLIENT_WEBSOCKET_BASE_URL}?token=${encodeURIComponent(
+      const wsUrl = `${this.clientWebsocketBaseUrl}?token=${encodeURIComponent(
         this.apiKey
       )}`;
       this.transport = new WebSocketTransport(wsUrl);
