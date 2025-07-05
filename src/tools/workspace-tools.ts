@@ -23,6 +23,8 @@ interface WorkspaceInfo {
 function getWorkspaceInfo(): WorkspaceInfo {
   const workspaceFolders = vscode.workspace.workspaceFolders || [];
 
+  console.log("Getting workspace info.");
+
   // Get open editor file paths (relative paths for readability)
   const openEditors = vscode.workspace.textDocuments
     .filter((doc) => doc.uri.scheme === "file")
@@ -41,6 +43,8 @@ function getWorkspaceInfo(): WorkspaceInfo {
     platform: process.platform,
     homeDir: os.homedir(),
   };
+
+  console.log("Returning workspace info.");
 
   return info;
 }

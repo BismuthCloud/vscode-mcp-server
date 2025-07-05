@@ -411,12 +411,11 @@ export async function activate(context: vscode.ExtensionContext) {
           // Wait a moment for the server to start
           await new Promise((resolve) => setTimeout(resolve, 1000));
         }
-
         // Create a webview panel
         const panel = vscode.window.createWebviewPanel(
           "bismuthWebApp",
           "Bismuth",
-          vscode.ViewColumn.One,
+          vscode.ViewColumn.Beside,
           {
             enableScripts: true,
             retainContextWhenHidden: true,
@@ -487,7 +486,7 @@ export async function activate(context: vscode.ExtensionContext) {
               id="bismuthFrame" 
               src="${webAppUrl}" 
               title="Bismuth Web App"
-              allow="clipboard-read; clipboard-write; *"
+              allow="clipboard-read; clipboard-write"
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-clipboard-read allow-clipboard-write"
             ></iframe>
             <script>
