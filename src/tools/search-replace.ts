@@ -214,6 +214,7 @@ export async function showDiff(
       {
         preview: true,
         preserveFocus: false,
+        viewColumn: vscode.ViewColumn.One,
       }
     );
 
@@ -271,7 +272,9 @@ export async function searchReplaceInFile(
 
   // Open the file to show the changes
   const document = await vscode.workspace.openTextDocument(fileUri);
-  await vscode.window.showTextDocument(document);
+  await vscode.window.showTextDocument(document, {
+    viewColumn: vscode.ViewColumn.One,
+  });
 
   // If showDiffView is enabled, show diff editor for visual feedback (after applying changes)
   if (showDiffView) {

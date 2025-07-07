@@ -384,7 +384,17 @@ export function registerSearchTools(server: McpServer): void {
         return result;
       } catch (error) {
         logger.error(`[search_code] Error: ${error}`);
-        throw error;
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error performing search: ${errorMessage}`,
+            },
+          ],
+          error: true,
+        };
       }
     }
   );

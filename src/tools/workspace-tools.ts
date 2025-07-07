@@ -89,7 +89,17 @@ export function registerWorkspaceTools(server: McpServer): void {
         return result;
       } catch (error) {
         console.error("[get_workspace_info] Error in tool:", error);
-        throw error;
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error getting workspace info: ${errorMessage}`,
+            },
+          ],
+          error: true,
+        };
       }
     }
   );

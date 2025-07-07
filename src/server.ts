@@ -163,6 +163,9 @@ export class MCPServer {
       logger.info("[MCPServer.start] Connecting MCP server to transport");
       await this.server.connect(this.transport as any);
 
+      // Add a short delay to allow the server to fully initialize
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
       this.isConnected = true;
       const totalTime = Date.now() - startTime;
       logger.info(

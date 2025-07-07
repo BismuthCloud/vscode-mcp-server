@@ -580,7 +580,17 @@ export function registerFileTools(
         return result;
       } catch (error) {
         console.error("[read_file] Error in tool:", error);
-        throw error;
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error reading file: ${errorMessage}`,
+            },
+          ],
+          error: true,
+        };
       }
     }
   );

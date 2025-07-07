@@ -189,7 +189,17 @@ export function registerShellTools(
         return result;
       } catch (error) {
         console.error("[execute_shell_command] Error in tool:", error);
-        throw error;
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error executing shell command: ${errorMessage}`,
+            },
+          ],
+          error: true,
+        };
       }
     }
   );

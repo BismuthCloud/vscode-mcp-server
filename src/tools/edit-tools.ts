@@ -110,7 +110,9 @@ export async function writeToWorkspaceFile(
 
       // Open the document to trigger linting
       const document = await vscode.workspace.openTextDocument(fileUri);
-      await vscode.window.showTextDocument(document);
+      await vscode.window.showTextDocument(document, {
+        viewColumn: vscode.ViewColumn.One,
+      });
       console.log(`[writeToWorkspaceFile] File opened in editor`);
     } else {
       throw new Error(`Failed to create file: ${fileUri.fsPath}`);
@@ -195,7 +197,9 @@ export async function replaceWorkspaceFileLines(
     // Get the active text editor or show the document
     let editor = vscode.window.activeTextEditor;
     if (!editor || editor.document.uri.toString() !== fileUri.toString()) {
-      editor = await vscode.window.showTextDocument(document);
+      editor = await vscode.window.showTextDocument(document, {
+        viewColumn: vscode.ViewColumn.One,
+      });
     }
 
     // Apply the edit
@@ -304,10 +308,15 @@ export function registerEditTools(server: McpServer): void {
   // Add search_replace tool
   server.tool(
     "search_replace",
-    `Performs search and replace operations on existing files with visual diff feedback.
+    `**CRITICAL**: Use this tool for small, focused changes. The 'search' parameter MUST be a small, unique snippet. DO NOT use large blocks of code or the entire file.
 
-        WHEN TO USE: ALWAYS your FIRST CHOICE for editing existing files, regardless of change size.
-        This is the PREFERRED method for ALL file modifications, from small edits to large rewrites.
+        Performs search and replace operations on existing files with visual diff feedback.
+
+        WHEN TO USE: ALWAYS your FIRST CHOICE for editing existing files. This is the PREFERRED method for ALL file modifications.
+
+        **IMPORTANT**: For the 'search' parameter, you MUST use a small, focused, and unique snippet of the code you want to replace. 
+        DO NOT provide the entire file or large, non-unique blocks of code. This will cause the tool to fail.
+        The best practice is to use a few lines of code that are unique to the section you want to edit.
 
         Features:
         - Exact match search (tries first)
@@ -329,7 +338,9 @@ export function registerEditTools(server: McpServer): void {
         - Address WARNINGS that impact the user's task or code quality
         - Only shows issues for the file that was just edited
 
-        Only use write_to_file if this tool fails or for creating new files.`,
+        Only use write_to_file if this tool fails or for creating new files.
+
+        **REMINDER**: Use small, unique snippets for the 'search' parameter to ensure accuracy and avoid errors.`,
     {
       path: z.string().describe("The path to the file to modify"),
       search: z
@@ -374,7 +385,17 @@ export function registerEditTools(server: McpServer): void {
         return result;
       } catch (error) {
         console.error("[search_replace] Error in tool:", error);
-        throw error;
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error performing search and replace: ${errorMessage}`,
+            },
+          ],
+          error: true,
+        };
       }
     }
   );

@@ -1,3 +1,4 @@
+import * as vscode from "vscode";
 import WebSocket from "ws";
 import { logger } from "./utils/logger";
 
@@ -27,6 +28,11 @@ export class WebSocketTransport implements Transport {
   private ws: WebSocket | null = null;
   private connected: boolean = false;
   private messageQueue: JSONRPCMessage[] = [];
+  private reconnectAttempts: number = 0;
+  private maxReconnectAttempts: number = 20;
+  private reconnectDelay: number = 1000; // Start with 1 second
+  private isReconnecting: boolean = false;
+  private explicitlyClosed: boolean = false;
 
   // Callbacks set by MCP server
   onclose?: () => void;
@@ -53,6 +59,9 @@ export class WebSocketTransport implements Transport {
         this.ws.on("open", () => {
           logger.info(`[WebSocketTransport] WebSocket connection opened`);
           this.connected = true;
+          this.reconnectAttempts = 0;
+          this.reconnectDelay = 1000;
+          this.isReconnecting = false;
 
           // Send any queued messages
           if (this.messageQueue.length > 0) {
@@ -134,6 +143,10 @@ export class WebSocketTransport implements Transport {
           this.connected = false;
           this.ws = null;
           this.onclose?.();
+
+          if (!this.explicitlyClosed) {
+            this.reconnect();
+          }
         });
 
         this.ws.on("error", (error: Error) => {
@@ -187,7 +200,7 @@ export class WebSocketTransport implements Transport {
   async send(message: JSONRPCMessage): Promise<void> {
     const messageStr = JSON.stringify(message);
 
-    if (!this.connected || !this.ws) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       logger.info(
         `[WebSocketTransport] Not connected, queueing message: ${messageStr.substring(
           0,
@@ -224,6 +237,7 @@ export class WebSocketTransport implements Transport {
   }
 
   async close(): Promise<void> {
+    this.explicitlyClosed = true;
     if (this.ws) {
       logger.info(`[WebSocketTransport] Closing WebSocket connection`);
       this.connected = false;
@@ -248,8 +262,40 @@ export class WebSocketTransport implements Transport {
 
   // Helper method to reconnect
   async reconnect(): Promise<void> {
-    logger.info(`[WebSocketTransport] Reconnecting...`);
-    await this.close();
-    await this.start();
+    if (this.isReconnecting) {
+      return;
+    }
+
+    this.isReconnecting = true;
+    this.reconnectAttempts++;
+
+    if (this.reconnectAttempts > this.maxReconnectAttempts) {
+      logger.error(
+        `[WebSocketTransport] Max reconnect attempts (${this.maxReconnectAttempts}) reached. Giving up.`
+      );
+      this.isReconnecting = false;
+      vscode.window.showErrorMessage(
+        "Failed to connect to Bismuth after multiple attempts. The extension has been disabled."
+      );
+      vscode.commands.executeCommand("vscode-mcp-server.toggleServer");
+      return;
+    }
+
+    logger.info(
+      `[WebSocketTransport] Reconnecting... Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`
+    );
+
+    setTimeout(async () => {
+      try {
+        await this.start();
+      } catch (error) {
+        logger.error(`[WebSocketTransport] Reconnect attempt failed: ${error}`);
+        this.isReconnecting = false;
+        this.reconnect(); // Schedule next attempt
+      }
+    }, this.reconnectDelay);
+
+    // Exponential backoff
+    this.reconnectDelay *= 2;
   }
 }

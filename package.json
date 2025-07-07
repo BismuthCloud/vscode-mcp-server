@@ -79,26 +79,50 @@
     },
     "commands": [
       {
-        "command": "vscode-mcp-server.helloWorld",
-        "title": "Hello World"
+        "command": "vscode-mcp-server.toggleServer",
+        "title": "BismuthVS: Toggle Connection",
+        "category": "BismuthVS"
       },
       {
         "command": "vscode-mcp-server.showServerInfo",
-        "title": "BismuthVS: Show Status"
-      },
-      {
-        "command": "vscode-mcp-server.toggleServer",
-        "title": "BismuthVS: Toggle"
+        "title": "BismuthVS: Show Server Info",
+        "category": "BismuthVS"
       },
       {
         "command": "vscode-mcp-server.configureApiKey",
-        "title": "BismuthVS: Configure API Key"
+        "title": "BismuthVS: Configure API Key",
+        "category": "BismuthVS"
       },
       {
         "command": "vscode-mcp-server.openWebApp",
-        "title": "BismuthVS: Open Web App"
+        "title": "Bismuth: Open Web App",
+        "category": "BismuthVS"
+      },
+      {
+        "command": "bismuth.copy",
+        "title": "Copy",
+        "category": "BismuthVS"
+      },
+      {
+        "command": "bismuth.paste",
+        "title": "Paste",
+        "category": "BismuthVS"
       }
-    ]
+    ],
+    "menus": {
+      "webview/context": [
+        {
+          "command": "bismuth.copy",
+          "when": "webviewId == 'bismuthWebApp'",
+          "group": "navigation"
+        },
+        {
+          "command": "bismuth.paste",
+          "when": "webviewId == 'bismuthWebApp'",
+          "group": "navigation"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

@@ -216,7 +216,17 @@ export function registerDiagnosticsTools(server: McpServer): void {
         return result;
       } catch (error) {
         console.error("[get_diagnostics] Error in tool:", error);
-        throw error;
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error getting diagnostics: ${errorMessage}`,
+            },
+          ],
+          error: true,
+        };
       }
     }
   );

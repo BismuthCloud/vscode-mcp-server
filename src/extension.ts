@@ -387,6 +387,17 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     );
 
+    const copyCommand = vscode.commands.registerCommand("bismuth.copy", () => {
+      vscode.commands.executeCommand("editor.action.clipboardCopyAction");
+    });
+
+    const pasteCommand = vscode.commands.registerCommand(
+      "bismuth.paste",
+      () => {
+        vscode.commands.executeCommand("editor.action.clipboardPasteAction");
+      }
+    );
+
     const openWebAppCommand = vscode.commands.registerCommand(
       "vscode-mcp-server.openWebApp",
       async () => {
@@ -422,10 +433,16 @@ export async function activate(context: vscode.ExtensionContext) {
           }
         );
 
+        panel.iconPath = vscode.Uri.joinPath(
+          context.extensionUri,
+          "resources",
+          "icon.svg"
+        );
+
         // Set the webview's HTML content to load the localhost URL in an iframe
         const webAppUrl = `http://localhost:3000?codeEditorAPIKey=${encodeURIComponent(
           apiKey
-        )}`;
+        )}&cacheBust=${Date.now()}`;
 
         // Function to get the HTML content
         const getWebviewContent = () => `
@@ -477,7 +494,7 @@ export async function activate(context: vscode.ExtensionContext) {
               }
             </style>
           </head>
-          <body>
+          <body data-vscode-context='{"webviewId": "bismuthWebApp", "webviewSection": "editor"}' >
             <div class="toolbar">
               <button onclick="refreshPage()">↻ Refresh</button>
               <span class="info">Press Cmd/Ctrl+R to refresh</span>
@@ -486,8 +503,7 @@ export async function activate(context: vscode.ExtensionContext) {
               id="bismuthFrame" 
               src="${webAppUrl}" 
               title="Bismuth Web App"
-              allow="clipboard-read; clipboard-write"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-clipboard-read allow-clipboard-write"
+              allow="clipboard-read; clipboard-write; *"
             ></iframe>
             <script>
               function refreshPage() {
@@ -508,12 +524,75 @@ export async function activate(context: vscode.ExtensionContext) {
                   refreshPage();
                 }
               });
+
+              const vscode = acquireVsCodeApi();
+
+              window.addEventListener('message', (event) => {
+                console.log('[Webview Script] Received message:', event.data);
+                const message = event.data;
+                const iframe = document.getElementById('bismuthFrame');
+
+                if (event.source === iframe.contentWindow) {
+                  // Message from iframe -> forward to extension
+                  if (message.type === 'bismuth-copy' || message.type === 'bismuth-paste-request') {
+                    console.log('[Webview Script] Forwarding message to extension:', message);
+                    vscode.postMessage(message);
+                  }
+                } else {
+                  // Message from extension -> forward to iframe
+                  if (message.type === 'bismuth-paste-content') {
+                    console.log('[Webview Script] Forwarding message to iframe:', message);
+                    iframe.contentWindow.postMessage(message, '*');
+                  }
+                }
+              });
             </script>
           </body>
           </html>
         `;
 
         panel.webview.html = getWebviewContent();
+
+        // Handle messages from webview
+        panel.webview.onDidReceiveMessage(
+          async (message) => {
+            try {
+              logger.info(
+                `[Webview] Received message: ${JSON.stringify(message)}`
+              );
+              switch (message.type) {
+                case "bismuth-copy":
+                  logger.info(
+                    `[Webview] Copying to clipboard: ${message.text.substring(
+                      0,
+                      50
+                    )}...`
+                  );
+                  await vscode.env.clipboard.writeText(message.text);
+                  break;
+
+                case "bismuth-paste-request":
+                  logger.info(`[Webview] Requesting clipboard content.`);
+                  const clipboardText = await vscode.env.clipboard.readText();
+                  logger.info(
+                    `[Webview] Sending clipboard content to webview: ${clipboardText.substring(
+                      0,
+                      50
+                    )}...`
+                  );
+                  panel.webview.postMessage({
+                    type: "bismuth-paste-content",
+                    text: clipboardText,
+                  });
+                  break;
+              }
+            } catch (error) {
+              logger.error(`[Webview] Error handling message: ${error}`);
+            }
+          },
+          undefined,
+          context.subscriptions
+        );
 
         vscode.window.showInformationMessage(
           "Bismuth web app opened in VS Code. Use Cmd/Ctrl+R to refresh."
@@ -590,6 +669,8 @@ export async function activate(context: vscode.ExtensionContext) {
       showServerInfoCommand,
       configureApiKeyCommand,
       openWebAppCommand,
+      copyCommand,
+      pasteCommand,
       configChangeListener,
       { dispose: async () => mcpServer && (await mcpServer.stop()) }
     );
