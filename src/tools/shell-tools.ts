@@ -4,6 +4,20 @@ import { z } from "zod";
 import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 /**
+ * Strips ANSI escape sequences (color codes, cursor movements, etc.) from a string
+ * @param text The text containing ANSI escape sequences
+ * @returns The text with all ANSI escape sequences removed
+ */
+function stripAnsiEscapeCodes(text: string): string {
+  // This regex matches all ANSI escape sequences including:
+  // - Color codes (e.g., \x1B[31m for red)
+  // - Cursor movements (e.g., \x1B[2J to clear screen)
+  // - Other terminal control sequences
+  const ansiRegex = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
+  return text.replace(ansiRegex, "");
+}
+
+/**
  * Waits briefly for shell integration to become available
  * @param terminal The terminal to wait for
  * @param timeout Maximum time to wait in milliseconds
@@ -69,7 +83,7 @@ export async function executeShellCommand(
     // Execute the command without waiting for completion
     terminal.shellIntegration!.executeCommand(fullCommand);
 
-    // Return immediately with a message
+    // Return immediately with a message (no need to strip ANSI codes from this static message)
     return {
       output: `Long-lived command started: ${command}\n\nThe command is now running in the terminal. Check the terminal for output.`,
     };
@@ -93,7 +107,9 @@ export async function executeShellCommand(
       throw new Error(`Failed to read command output: ${error}`);
     }
 
-    return { output };
+    // Strip ANSI escape codes from the output before returning
+    const cleanOutput = stripAnsiEscapeCodes(output);
+    return { output: cleanOutput };
   };
 
   // Race between execution and timeout
