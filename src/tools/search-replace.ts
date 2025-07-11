@@ -1,7 +1,5 @@
 import * as vscode from "vscode";
 import * as path from "path";
-import * as os from "os";
-import * as fs from "fs/promises";
 
 /**
  * Attempts to find the search content in the original content using exact match
@@ -177,8 +175,50 @@ export function applySearchReplace(
   );
 }
 
+// Virtual document content provider for in-memory diff display
+class VirtualDocumentProvider implements vscode.TextDocumentContentProvider {
+  private documents = new Map<string, string>();
+  private _onDidChange = new vscode.EventEmitter<vscode.Uri>();
+  readonly onDidChange = this._onDidChange.event;
+
+  provideTextDocumentContent(uri: vscode.Uri): string {
+    return this.documents.get(uri.toString()) || "";
+  }
+
+  setContent(uri: vscode.Uri, content: string): void {
+    this.documents.set(uri.toString(), content);
+    this._onDidChange.fire(uri);
+  }
+
+  clearContent(uri: vscode.Uri): void {
+    this.documents.delete(uri.toString());
+  }
+
+  dispose(): void {
+    this._onDidChange.dispose();
+    this.documents.clear();
+  }
+}
+
+// Global instance of the virtual document provider
+let virtualDocProvider: VirtualDocumentProvider | undefined;
+
 /**
- * Shows a diff editor for visual feedback (changes are applied automatically)
+ * Gets or creates the virtual document provider
+ */
+function getVirtualDocumentProvider(): VirtualDocumentProvider {
+  if (!virtualDocProvider) {
+    virtualDocProvider = new VirtualDocumentProvider();
+    vscode.workspace.registerTextDocumentContentProvider(
+      "vscode-mcp-diff",
+      virtualDocProvider
+    );
+  }
+  return virtualDocProvider;
+}
+
+/**
+ * Shows a diff editor for visual feedback using in-memory virtual documents
  */
 export async function showDiff(
   originalUri: vscode.Uri,
@@ -186,30 +226,28 @@ export async function showDiff(
   modifiedContent: string,
   title: string
 ): Promise<void> {
-  // Create temporary files for both original and modified content
-  const tempDir = os.tmpdir();
+  const provider = getVirtualDocumentProvider();
   const baseName = path.basename(originalUri.fsPath);
   const timestamp = Date.now();
 
-  const originalTempFileName = `vscode-mcp-original-${timestamp}-${baseName}`;
-  const modifiedTempFileName = `vscode-mcp-modified-${timestamp}-${baseName}`;
+  // Create virtual URIs for the diff
+  const originalVirtualUri = vscode.Uri.parse(
+    `vscode-mcp-diff://original/${timestamp}/${baseName}`
+  );
+  const modifiedVirtualUri = vscode.Uri.parse(
+    `vscode-mcp-diff://modified/${timestamp}/${baseName}`
+  );
 
-  const originalTempPath = path.join(tempDir, originalTempFileName);
-  const modifiedTempPath = path.join(tempDir, modifiedTempFileName);
+  // Set content in the provider
+  provider.setContent(originalVirtualUri, originalContent);
+  provider.setContent(modifiedVirtualUri, modifiedContent);
 
   try {
-    // Write both contents to temp files
-    await fs.writeFile(originalTempPath, originalContent, "utf8");
-    await fs.writeFile(modifiedTempPath, modifiedContent, "utf8");
-
-    const originalTempUri = vscode.Uri.file(originalTempPath);
-    const modifiedTempUri = vscode.Uri.file(modifiedTempPath);
-
     // Open diff editor showing original vs modified
     await vscode.commands.executeCommand(
       "vscode.diff",
-      originalTempUri,
-      modifiedTempUri,
+      originalVirtualUri,
+      modifiedVirtualUri,
       title,
       {
         preview: true,
@@ -217,24 +255,10 @@ export async function showDiff(
         viewColumn: vscode.ViewColumn.One,
       }
     );
-
-    // Clean up temp files after a delay to allow diff view to load
-    setTimeout(async () => {
-      try {
-        await fs.unlink(originalTempPath);
-        await fs.unlink(modifiedTempPath);
-      } catch (e) {
-        // Ignore cleanup errors
-      }
-    }, 5000); // Increased delay to give more time for viewing
   } catch (error) {
     // Clean up on error
-    try {
-      await fs.unlink(originalTempPath);
-      await fs.unlink(modifiedTempPath);
-    } catch (e) {
-      // Ignore cleanup errors
-    }
+    provider.clearContent(originalVirtualUri);
+    provider.clearContent(modifiedVirtualUri);
     throw error;
   }
 }
