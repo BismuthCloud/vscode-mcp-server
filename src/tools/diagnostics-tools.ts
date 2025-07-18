@@ -225,7 +225,7 @@ export function registerDiagnosticsTools(server: McpServer): void {
               text: `Error getting diagnostics: ${errorMessage}`,
             },
           ],
-          error: true,
+          isError: true,
         };
       }
     }

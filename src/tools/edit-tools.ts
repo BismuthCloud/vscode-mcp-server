@@ -394,7 +394,7 @@ export function registerEditTools(server: McpServer): void {
               text: `Error performing search and replace: ${errorMessage}`,
             },
           ],
-          error: true,
+          isError: true,
         };
       }
     }

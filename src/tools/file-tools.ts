@@ -589,7 +589,7 @@ export function registerFileTools(
               text: `Error reading file: ${errorMessage}`,
             },
           ],
-          error: true,
+          isError: true,
         };
       }
     }

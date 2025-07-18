@@ -54,7 +54,7 @@ async function waitForShellIntegration(
  * @param terminal The terminal with shell integration
  * @param command The command to execute
  * @param cwd Optional working directory for the command
- * @param timeout Command timeout in milliseconds (default: 180000 = 3 minutes)
+ * @param timeout Command timeout in milliseconds (default: 30000 = 30s)
  * @param longLived If true, command runs without timeout
  * @returns Promise that resolves with the command output
  */
@@ -62,10 +62,12 @@ export async function executeShellCommand(
   terminal: vscode.Terminal,
   command: string,
   cwd?: string,
-  timeout: number = 180000,
+  timeout: number = 30000,
   longLived: boolean = false
 ): Promise<{ output: string }> {
   terminal.show();
+
+  let startCwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || ".";
 
   // Build full command including cd if cwd is specified
   let fullCommand = command;
@@ -73,8 +75,7 @@ export async function executeShellCommand(
     if (cwd === "." || cwd === "./") {
       fullCommand = `${command}`;
     } else {
-      const quotedPath = cwd.includes(" ") ? `"${cwd}"` : cwd;
-      fullCommand = `cd ${quotedPath} && ${command}`;
+      fullCommand = `cd "${startCwd}" && cd "${cwd}" && ${command}`;
     }
   }
 
@@ -214,7 +215,7 @@ export function registerShellTools(
               text: `Error executing shell command: ${errorMessage}`,
             },
           ],
-          error: true,
+          isError: true,
         };
       }
     }

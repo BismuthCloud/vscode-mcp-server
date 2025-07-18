@@ -559,7 +559,7 @@ export function registerSymbolTools(server: McpServer): void {
               text: `Error searching for symbols: ${errorMessage}`,
             },
           ],
-          error: true,
+          isError: true,
         };
       }
     }
@@ -679,7 +679,7 @@ export function registerSymbolTools(server: McpServer): void {
               text: `Error getting symbol definition: ${errorMessage}`,
             },
           ],
-          error: true,
+          isError: true,
         };
       }
     }
@@ -784,7 +784,7 @@ export function registerSymbolTools(server: McpServer): void {
               text: `Error getting document symbols: ${errorMessage}`,
             },
           ],
-          error: true,
+          isError: true,
         };
       }
     }

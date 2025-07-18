@@ -168,7 +168,9 @@ async function searchWithRipgrep(
       buffer = lines.pop() || "";
 
       for (const line of lines) {
-        if (!line.trim()) continue;
+        if (!line.trim()) {
+          continue;
+        }
 
         try {
           const json: RipgrepMatch = JSON.parse(line);
@@ -393,7 +395,7 @@ export function registerSearchTools(server: McpServer): void {
               text: `Error performing search: ${errorMessage}`,
             },
           ],
-          error: true,
+          isError: true,
         };
       }
     }

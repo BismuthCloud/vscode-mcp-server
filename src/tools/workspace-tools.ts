@@ -98,7 +98,7 @@ export function registerWorkspaceTools(server: McpServer): void {
               text: `Error getting workspace info: ${errorMessage}`,
             },
           ],
-          error: true,
+          isError: true,
         };
       }
     }
