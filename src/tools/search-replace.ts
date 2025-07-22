@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import { getVirtualFile, setVirtualFile } from "../utils/virtual-fs";
 
 /**
  * Attempts to find the search content in the original content using exact match
@@ -278,6 +279,18 @@ export async function searchReplaceInFile(
 
   const workspaceFolder = vscode.workspace.workspaceFolders[0];
   const fileUri = vscode.Uri.joinPath(workspaceFolder.uri, workspacePath);
+
+  // Check virtual file system first
+  const virtualContent = getVirtualFile(workspacePath);
+  if (virtualContent !== undefined) {
+    const modifiedContent = applySearchReplace(
+      virtualContent,
+      searchContent,
+      replaceContent
+    );
+    setVirtualFile(workspacePath, modifiedContent);
+    return;
+  }
 
   // Read the current file content
   const fileContent = await vscode.workspace.fs.readFile(fileUri);

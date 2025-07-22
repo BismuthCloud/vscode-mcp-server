@@ -3,6 +3,7 @@ import * as path from "path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { getVirtualFile, listVirtualFiles } from "../utils/virtual-fs";
 
 // Type for file listing results
 export type FileListingResult = Array<{
@@ -278,6 +279,19 @@ export async function listWorkspaceFiles(
 
   try {
     const result = await processDirectory(targetUri);
+    const virtualFiles = listVirtualFiles()
+      .filter((p) => p.startsWith(workspacePath))
+      .map((p) => ({
+        path: p,
+        type: "file" as const,
+      }));
+
+    const finalResult = [...result];
+    for (const virtualFile of virtualFiles) {
+      if (!finalResult.some((f) => f.path === virtualFile.path)) {
+        finalResult.push(virtualFile);
+      }
+    }
 
     if (limitReached) {
       console.warn(
@@ -289,10 +303,10 @@ export async function listWorkspaceFiles(
         type: "file" as const,
       });
     } else {
-      console.log(`[listWorkspaceFiles] Found ${result.length} entries`);
+      console.log(`[listWorkspaceFiles] Found ${finalResult.length} entries`);
     }
 
-    return result;
+    return finalResult;
   } catch (error) {
     console.error("[listWorkspaceFiles] Error:", error);
     throw error;
@@ -557,6 +571,18 @@ export function registerFileTools(
       const zeroBasedEndLine = endLine > 0 ? endLine - 1 : endLine;
 
       try {
+        const virtualContent = getVirtualFile(path);
+        if (virtualContent !== undefined) {
+          console.log(`[read_file] Reading virtual file: ${path}`);
+          return {
+            content: [
+              {
+                type: "text",
+                text: virtualContent,
+              },
+            ],
+          };
+        }
         console.log("[read_file] Reading file");
         const content = await readWorkspaceFile(
           path,

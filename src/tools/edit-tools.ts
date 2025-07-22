@@ -4,6 +4,7 @@ import { z } from "zod";
 import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { searchReplaceInFile } from "./search-replace";
 import * as path from "path";
+import { setVirtualFile } from "../utils/virtual-fs";
 
 interface DiagnosticInfo {
   file: string;
@@ -251,6 +252,13 @@ export function registerEditTools(server: McpServer): void {
     {
       path: z.string().describe("The path to the file to write"),
       content: z.string().describe("The content to write to the file"),
+      ephemeral: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "Whether to write to a ephemeral, in-memory file instead of the real filesystem"
+        ),
       ignoreIfExists: z
         .boolean()
         .optional()
@@ -260,13 +268,39 @@ export function registerEditTools(server: McpServer): void {
     async ({
       path,
       content,
+      ephemeral = false,
       ignoreIfExists = false,
     }): Promise<CallToolResult> => {
       console.log(
-        `[write_to_file] Tool called with path=${path}, ignoreIfExists=${ignoreIfExists}`
+        `[write_to_file] Tool called with path=${path}, ephemeral=${ephemeral}, ignoreIfExists=${ignoreIfExists}`
       );
 
+      if (path === "QUESTIONS" || path === "MEMORY") {
+        console.log("[write_to_file] Using ephemeral mode for special paths");
+        ephemeral = true;
+      }
+
       try {
+        if (ephemeral) {
+          console.log(`[write_to_file] Writing virtual file to ${path}`);
+          setVirtualFile(path, content);
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    success: true,
+                    path: path,
+                    final_contents: content,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
         console.log("[write_to_file] Writing file");
         await writeToWorkspaceFile(path, content, ignoreIfExists);
 
